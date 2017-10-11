@@ -12,23 +12,20 @@ $FileBrowser = New-Object System.Windows.Forms.OpenFileDialog -Property @{
 $file = $FileBrowser.FileName;
 If($FileBrowser.FileNames -like "*\*") {
 
-    $wim_images = @{}
-    $wimarchive_full_path = $FileBrowser.FileName
-    $info_output = &$wimlib_exe_full_path info $wimarchive_full_path
-    $info_output | % {
-        if ($_ -match '^Index:\s*(\d+)'){
-            $temp_match = $Matches[1]
-        }
-        if ($_ -match '^Creation Time:\s+(.+)'){
-            $wim_images[$temp_match] = $Matches[1]
-        }
-    }
-    # sort hashtable from the latest
-    $wim_images = $wim_images.getenumerator() | sort-object -property Name -Descending
-    $wim_images
+
+    cleaner_wimlib_info $FileBrowser.FileName
 
 }
 
 else {
     Write-Host "Cancelled by user"
+}
+
+function cleaner_wimlib_info([string]$wim_file_full_path) {
+    &$wimlib_exe_full_path info, $wim_file_full_path | ?{ $_ -notmatch`
+    '(Architecture|Attributes|Boot Index|Build|Chunk Size|Compression|Default Language|Description|Display (Description|Name)|Directory Count|Edition ID|File Count|Flags|GUID|HAL|Hard Link Bytes|Installation Type|Languages|Modification Time|Part Number|Product (Suite|Type)|Service Pack Level|System Root|Version|WIMBoot compatible):' } | `
+    %{ if ($_ -match '(Total Bytes:\s*)(\d+)' -or $_ -match '(Size:\s*)(\d+)' )  {
+          if ([int64]$Matches[2] -ge 1GB) { $divider = 1GB ; $unit = " GB" } else { $divider = 1MB ; $unit = " MB" }
+          $Matches[1] + [Math]::Ceiling($Matches[2] / $divider).ToString("N0") + $unit
+       } else { $_ }}
 }
