@@ -38,7 +38,7 @@ $wimlib_exe_full_path = "C:\ProgramData\wimlib_backup\wimlib-1.12.0-windows-x86_
 # --------------------------------------------------------------------
 
 Set-StrictMode -Version 2.0
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 $config_fullpath = Resolve-Path -Path $config_path
 $config_file_name = (Get-Item $config_fullpath).name
@@ -66,7 +66,7 @@ Get-Content $config_fullpath | Foreach-Object{
             New-Variable -Name $var[0] -Value ($var[1] -eq $true)
         # load what looks like numbers as integers
         } ElseIf ($var[1] -match "^\d+$") {
-            $integer_version = [convert]::ToInt32($($var[1]), 10)
+            $integer_version = [convert]::ToInt32($var[1], 10)
             New-Variable -Name $var[0] -Value $integer_version
         # rest as string
         } else {
@@ -144,7 +144,7 @@ function verify_wim_image() {
 }
 #=================================================================
 
-verify_wim_image $wim_file_full_path $wimlib_exe_full_path
+# verify_wim_image $wim_file_full_path $wimlib_exe_full_path
 
 
 if (($backup_wim_file_before_adding_new_image -eq $True) -AND (Test-Path $wim_file_full_path)) {
@@ -159,17 +159,26 @@ if (($backup_wim_file_before_adding_new_image -eq $True) -AND (Test-Path $wim_fi
 
 
 Write-Verbose "-------------------------------------------------------------------------------"
-Write-Verbose "MAKE NEW BACKUP OF THE TARGET IN TO WIM ARCHIVE USING WIMLIB"
+Write-Verbose "BACKUP OF TARGET IN TO WIM ARCHIVE USING WIMLIB"
 
 if (Test-Path $wim_file_full_path) {
-    Write-Verbose "- adding new image in to the archive $wim_file_full_path"
+    Write-Verbose "- will be adding new image in to the archive $wim_file_full_path"
     $command = 'append'
 } else {
-    Write-Verbose "- creating new wimlib archive $wim_file_full_path"
+    Write-Verbose "- will be creating new wimlib archive $wim_file_full_path"
     $command = 'capture'
 }
 
-[Collections.ArrayList]$wimlib_arguments = $command, $target, $wim_file_full_path, $wim_image_name, "--snapshot", "--compress=$compression_level", "--check"
+# test if what we back up is on a network or a local drive, dont use VSS snapshot if its on network
+$temp_target = Get-Item $target
+if ($temp_target.PSPath.Contains('\\')) {
+    $snapshot = ""
+    Write-Verbose "- the backup target seems to be on a network, not using VSS snapshot"
+} else {
+    $snapshot = "--snapshot"
+}
+
+[Collections.ArrayList]$wimlib_arguments = $command, $target, $wim_file_full_path, $wim_image_name, "--compress=$compression_level", "--check", $snapshot
 
 Write-Verbose "- this command will now be executed:"
 Write-Verbose "$wimlib_exe_full_path $wimlib_arguments"
@@ -226,14 +235,14 @@ $all_previous_backups = @()
     if ($_ -match "^Index:") {
         $wim_image_object = New-Object System.Object
         $var = $_.Split(':').Trim()
-        $index_number = [convert]::ToInt32($($var[1]), 10)
+        $index_number = [convert]::ToInt32($var[-1], 10)
         $wim_image_object | Add-Member -Type NoteProperty -Name "image_index" -Value $index_number
     }
 
     if ($_ -match "^Name:") {
         # get unix time from the images name (e.g. mybackup_2017-10-03_1507067975)
         $var = $_.Split('_').Trim()
-        $epoch_time = [convert]::ToInt32($var[2], 10)
+        $epoch_time = [convert]::ToInt32($var[-1], 10)
         $wim_image_object | Add-Member -Type NoteProperty -Name "creation_time" -Value $epoch_time
 
         # get date object from the unix time
@@ -373,14 +382,14 @@ $current_backups = @()
     if ($_ -match "^Index:") {
         $wim_image_object = New-Object System.Object
         $var = $_.Split(':').Trim()
-        $aa = [convert]::ToInt32($($var[1]), 10)
+        $aa = [convert]::ToInt32($var[-1], 10)
         $wim_image_object | Add-Member -Type NoteProperty -Name "index" -Value $aa
     }
 
     if ($_ -match "^Name:") {
         # get unix time from the end of images name (example: mybackup_2017-10-03_1507067975)
         $var = $_.Split('_').Trim()
-        $epoch_time = [convert]::ToInt32($var[2], 10)
+        $epoch_time = [convert]::ToInt32($var[-1], 10)
         $date_object = Convert-UnixTime($epoch_time)
 
         # spacer, empty column so that the table looks better
@@ -391,8 +400,8 @@ $current_backups = @()
         $wim_image_object | Add-Member -Type NoteProperty -Name "weekday" -Value $week_day
 
         # get day, month in full name
-        $day_month = Get-Date $date_object -format "dd-MMMM"
-        $wim_image_object | Add-Member -Type NoteProperty -Name "day-month" -Value $day_month
+        $day_month = Get-Date $date_object -format "dd  MMMM  yyyy  "
+        $wim_image_object | Add-Member -Type NoteProperty -Name "day - month - year" -Value $day_month
 
         # spacer, empty column so that the table looks better
         $wim_image_object | Add-Member -Type NoteProperty -Name "  " -Value "  "
@@ -405,7 +414,7 @@ $current_backups = @()
         $wim_image_object | Add-Member -Type NoteProperty -Name "   " -Value "   "
 
         # full date
-        $wim_image_object | Add-Member -Type NoteProperty -Name "full date" -Value $date_object
+        $wim_image_object | Add-Member -Type NoteProperty -Name "full date" -Value $date_object.ToUniversalTime()
 
         $current_backups += $wim_image_object
     }
@@ -432,6 +441,12 @@ Write-Verbose "- info file copied next to wim file"
 
 $runtime = (Get-Date) - $script_start_date
 $readable_runtime = "{0:dd} days {0:hh} hours {0:mm} minutes {0:ss} seconds" -f $runtime
+
+
+#Write-Verbose "-------------------------------------------------------------------------------"
+#Write-Verbose "SENDING EMAIL"
+
+
 
 Write-Verbose "-------------------------------------------------------------------------------"
 Write-Verbose " "

@@ -30,6 +30,32 @@ if (-NOT $running_as_admin){
     exit
 }
 
+# check powershell version
+if ($PSVersionTable.PSVersion.Major < 5) {
+    echo $PSVersionTable.PSVersion
+    echo "INSTALL WMF 5.1"
+    cmd /c pause
+    exit
+}
+
+if ($PSVersionTable.PSVersion.Minor < 1) {
+    echo $PSVersionTable.PSVersion
+    echo "INSTALL WMF 5.1"
+    cmd /c pause
+    exit
+}
+
+# check NET framework version
+$NetRegKey = Get-Childitem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full'
+$Release = $NetRegKey.GetValue("Release")
+$NetRegKey
+if ($Release -lt 379893) {
+    echo "SEEMS NET FRAMEWORK IS OLDER THAN 4.5.2"
+    cmd /c pause
+    exit
+}
+
+
 $t = Get-Date -format "yyyy-MM-dd || HH:mm:ss"
 echo " "
 echo "################################################################################"
@@ -86,6 +112,10 @@ keep_monthly=false
 keep_n_monthly=4
 keep_weekly=false
 keep_n_weekly=2
+send_email=false
+email_address=example@example.com
+email_password=password123
+smtp_server=smtp@example.com
 "@
 
 $config_template | Out-File -FilePath $config_file_path -Encoding ASCII
