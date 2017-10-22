@@ -31,14 +31,14 @@ if (-NOT $running_as_admin){
 }
 
 # check powershell version
-if ($PSVersionTable.PSVersion.Major < 5) {
+if ($PSVersionTable.PSVersion.Major -lt 5) {
     echo $PSVersionTable.PSVersion
     echo "INSTALL WMF 5.1"
     cmd /c pause
     exit
 }
 
-if ($PSVersionTable.PSVersion.Minor < 1) {
+if ($PSVersionTable.PSVersion.Minor -lt 1) {
     echo $PSVersionTable.PSVersion
     echo "INSTALL WMF 5.1"
     cmd /c pause
@@ -46,11 +46,10 @@ if ($PSVersionTable.PSVersion.Minor < 1) {
 }
 
 # check NET framework version
-$NetRegKey = Get-Childitem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full'
-$Release = $NetRegKey.GetValue("Release")
-$NetRegKey
-if ($Release -lt 379893) {
-    echo "SEEMS NET FRAMEWORK IS OLDER THAN 4.5.2"
+$NET_info = Get-ItemProperty -Path 'HKLM:\Software\Microsoft\NET Framework Setup\NDP\v4\Full' -ErrorAction Stop
+if ($NET_info.Release -lt 378675) {
+    echo "NET framework version: " + $NET_info.Version
+    echo "UPDATE NET FRAMEWORK TO AT LEAST v4.5.1"
     cmd /c pause
     exit
 }
@@ -97,7 +96,7 @@ if (Test-Path $configs_folder) {
     echo "- the $configs_folder path already exists"
 } else {
     New-Item $configs_folder -type directory
-    echo "- new folder created: $deploy_folder"
+    echo "- new folder created: $configs_folder"
 }
 
 $config_template = @"
@@ -113,9 +112,10 @@ keep_n_monthly=4
 keep_weekly=false
 keep_n_weekly=2
 send_email=false
-email_address=example@example.com
-email_password=password123
-smtp_server=smtp@example.com
+email_recipient=example@example.com
+email_sender_address=example@example.com
+email_sender_password=password123
+email_sender_smtp_server=smtp.gmail.com
 "@
 
 $config_template | Out-File -FilePath $config_file_path -Encoding ASCII

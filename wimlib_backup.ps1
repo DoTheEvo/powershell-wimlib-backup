@@ -62,7 +62,8 @@ Get-Content $config_fullpath | Foreach-Object{
     if (-NOT $_.StartsWith("#")){
         $var = $_.Split('=')
         # load preset variables as booleans
-        if (@('delete_old_backups','keep_monthly','keep_weekly', 'backup_wim_file_before_adding_new_image=false') -contains $var[0]) {
+        $bool_vars = @('delete_old_backups','keep_monthly','keep_weekly', 'backup_wim_file_before_adding_new_image', 'send_email')
+        if ($bool_vars -contains $var[0]) {
             New-Variable -Name $var[0] -Value ($var[1] -eq $true)
         # load what looks like numbers as integers
         } ElseIf ($var[1] -match "^\d+$") {
@@ -374,10 +375,31 @@ Write-Verbose "-----------------------------------------------------------------
 Write-Verbose "CREATING INFO FILE"
 
 # creating nice and readable info file in the logs directory and next to the wim file
-# it contains mostly the date information about the current backups
+# it contains information about the content of the vim file, lists backups, dates, size, free space
+$logs_directory = (Get-Item $log_file_full_path).Directory
+$info_file_path = Join-Path -path $logs_directory -ChildPath ($pure_config_name + ".txt")
+
+$wim_file_size = Get-FriendlySize((Get-Item $wim_file_full_path).Length)
+
+$free_space = 0
+$backup_partition = $backup_path.Substring(0,2)
+
+if ($backup_partition -eq "\\") {
+    $free_space = "unknown, network drive"
+} else {
+    $drives = Get-WmiObject Win32_LogicalDisk
+    foreach ($d in $drives) {
+        if ($d.DeviceID -eq $backup_partition) {
+            $free_space = Get-FriendlySize($d.FreeSpace)
+        }
+    }
+}
+
+($wim_file_full_path + " - " + $wim_file_size) | Out-File -FilePath $info_file_path -Encoding "UTF8"
+($backup_partition + " partition free space - " + $free_space) | Out-File -Append -FilePath $info_file_path -Encoding "UTF8"
+
 $current_backups = @()
 &$wimlib_exe_full_path info $wim_file_full_path | %{
-
     # get index of the image
     if ($_ -match "^Index:") {
         $wim_image_object = New-Object System.Object
@@ -420,33 +442,33 @@ $current_backups = @()
     }
 }
 
-# create info file with the current state of the images
-$logs_directory = (Get-Item $log_file_full_path).Directory
-$info_file_path = Join-Path -path $logs_directory -ChildPath ($pure_config_name + ".txt")
+$table_formated_backup = $current_backups | Sort-Object -Descending 'full date' | Format-Table
+$table_formated_backup | Out-File -Append -FilePath $info_file_path -Encoding "UTF8"
+$body_html = "<hr><table><tr><td>$wim_file_full_path - $wim_file_size</td></tr><tr><td><b>$backup_partition</b> partition free space - <b>$free_space</b></td></tr></table><hr>"
+$html_table = $current_backups | Sort-Object -Descending 'full date' |  ConvertTo-Html -Body $body_html
 
-$wim_file_size = Get-FriendlySize((Get-Item $wim_file_full_path).Length)
-
-$wim_file_full_path | Out-File -FilePath $info_file_path -Encoding "UTF8"
-$wim_file_size| Out-File -Append -FilePath $info_file_path -Encoding "UTF8"
-(Get-Date).ToString() | Out-File -Append  -FilePath $info_file_path -Encoding "UTF8"
-
-
-$wimlib_arguments = "info", $wim_file_full_path
-$current_backups | Sort-Object -Descending 'full date' | Format-Table | Out-File -Append -FilePath $info_file_path -Encoding "UTF8"
 
 Write-Verbose "- info file created: $info_file_path"
 
 Copy-Item $info_file_path $backup_path
 Write-Verbose "- info file copied next to wim file"
 
+
+if ($send_email -eq $true) {
+    Write-Verbose "-------------------------------------------------------------------------------"
+    Write-Verbose "SENDING EMAIL"
+
+    Write-Verbose "- send_email: $send_email"
+    Write-Verbose "- email_recipient: $email_recipient"
+    Write-Verbose "- email_sender_address: $email_sender_address"
+    Write-Verbose "- email_sender_password: *********"
+    Write-Verbose "- email_sender_smtp_server: $email_sender_smtp_server"
+
+    Write-Verbose "- email will be send after the end of the transcript"
+}
+
 $runtime = (Get-Date) - $script_start_date
 $readable_runtime = "{0:dd} days {0:hh} hours {0:mm} minutes {0:ss} seconds" -f $runtime
-
-
-#Write-Verbose "-------------------------------------------------------------------------------"
-#Write-Verbose "SENDING EMAIL"
-
-
 
 Write-Verbose "-------------------------------------------------------------------------------"
 Write-Verbose " "
@@ -456,3 +478,23 @@ Write-Verbose " "
 
 Stop-Transcript
 $VerbosePreference = $OldVerbosePreference
+
+# sending email after transcript ended to allow sending of the log file
+if ($send_email -eq $true) {
+    $msg = new-object Net.Mail.MailMessage
+    $smtp = new-object Net.Mail.SmtpClient($email_sender_smtp_server)
+    $att = New-Object Net.Mail.Attachment($log_file_full_path)
+    $msg.Attachments.Add($att)
+    $smtp.EnableSSL = $true
+    $msg.From = $email_sender_address
+    $msg.To.Add($email_recipient)
+    $msg.BodyEncoding = [system.Text.Encoding]::Unicode
+    $msg.SubjectEncoding = [system.Text.Encoding]::Unicode
+    $msg.IsBodyHTML = $true
+    $msg.Subject = "Wimilib backup, $pure_config_name"
+    $msg.Body = $html_table
+    $smtp.Credentials = New-Object System.Net.NetworkCredential($email_sender_address, $email_sender_password)
+    $smtp.Send($msg)
+    $att.Dispose()
+    $msg.Dispose()
+}
