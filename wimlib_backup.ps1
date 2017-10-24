@@ -79,7 +79,7 @@ Get-Content $config_fullpath | Foreach-Object{
 # some variables used through out the script
 $script_start_date = Get-Date
 $date = Get-Date -format "yyyy-MM-dd"
-$unix_time = Get-Date -UFormat %s -Millisecond 0
+$unix_time = Get-Date -Date (Get-Date).ToUniversalTime() -uformat %s -Millisecond 0
 $wim_image_name = $pure_config_name + "_" + $date + "_" + $unix_time
 
 $t = Get-Date -format "yyyy-MM-dd || HH:mm:ss"
@@ -436,7 +436,7 @@ $current_backups = @()
         $wim_image_object | Add-Member -Type NoteProperty -Name "   " -Value "   "
 
         # full date
-        $wim_image_object | Add-Member -Type NoteProperty -Name "full date" -Value $date_object.ToUniversalTime()
+        $wim_image_object | Add-Member -Type NoteProperty -Name "full date" -Value $date_object
 
         $current_backups += $wim_image_object
     }
