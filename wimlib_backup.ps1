@@ -1,15 +1,18 @@
 # ------------------------------------------------------------------------------
 #    --------------------------   WIMLIB_BACKUP   --------------------------
 # ------------------------------------------------------------------------------
+# - v1.0.0  2017-10-31
+
 # - requirements:
 #       WMF 5.0+, Volume Shadow Copy (VSS) service enabled
+
 # - this script backups $target in to a wim file at $backup_path
-# - uses volume shadowcopy service to alow backup of opened files
+# - uses VSS to alow backup of opened files, unless $target is on a network
 # - uses deduplication of wim archive to greatly reduce size of the backup
-# - settings are passed to the script as a config file, e.g mybackup_config.ini
+# - settings are passed to the script through config file, e.g taxes_config.ini
 # - wim file will be named based on the configs file name
 #
-# ----  values expected in config file  ----
+# ------  values expected in config file  ------
 # target=C:\test
 # backup_path=C:\
 # compression_level=LZX:20
@@ -20,30 +23,31 @@
 # keep_n_monthly=4
 # keep_weekly=false
 # keep_n_weekly=2
+# send_email=false
+# email_recipients=example@example.com
+# email_sender_address=example@example.com
+# email_sender_password=password123
+# email_sender_smtp_server=smtp.gmail.com
 # ----------------------------------------------
-# keep_last_n - integer, number of last backups that are kept no matter other settings
-# keep_weekly - true/false, if set to true, keep one backup of every week
-# keep_monthly - true/false, if set to true, keep one backup of every month
 
-
-# ----------------------------------------------
-# get path to the config file passed as a parameter, throw error if theres none
-Param( [string]$config_path=$(throw "config file is mandatory, please provide as parameter") )
+# path to the config file passed as a parameter, throw error if theres none
+Param( [string]$config_path=$(throw 'config file is mandatory, please provide as parameter') )
 
 # absolute path to the wimlib executable
-# rest of the paths used through out the script come either from config file
+# rest of the paths used through out the script come either from the config file
 # or are relative paths to this scripts location
 # --------------------------------------------------------------------
-$wimlib_exe_full_path = "C:\ProgramData\wimlib_backup\wimlib-1.12.0-windows-x86_64-bin\wimlib-imagex.exe"
+$wimlib_exe_full_path = 'C:\ProgramData\wimlib_backup\wimlib-1.12.0-windows-x86_64-bin\wimlib-imagex.exe'
 # --------------------------------------------------------------------
 
 Set-StrictMode -Version 2.0
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = 'Continue'
 
 $config_fullpath = Resolve-Path -Path $config_path
 $config_file_name = (Get-Item $config_fullpath).name
 
-#removes _config.ini from the name if its there, if its not, use the whole filename without the extention
+# removes _config.ini from the name if its there
+# if its not, use the whole filename without the extention
 if ($config_file_name.EndsWith('_config.ini')) {
     $pure_config_name = $config_file_name.Substring(0,($config_file_name.Length)-11)
 } else {
@@ -51,22 +55,22 @@ if ($config_file_name.EndsWith('_config.ini')) {
 }
 
 # start logging in to log file that is named based on the config file
-$log_file_name = $pure_config_name + ".log"
-$log_file_full_path = Join-Path -Path $PSScriptRoot -ChildPath "logs" | Join-Path -ChildPath $log_file_name
+$log_file_name = "$pure_config_name.log"
+$log_file_full_path = Join-Path -Path $PSScriptRoot -ChildPath 'logs' | Join-Path -ChildPath $log_file_name
 Start-Transcript -Path $log_file_full_path -Append -Force
 $OldVerbosePreference = $VerbosePreference
 $VerbosePreference = 'Continue'
 
 # read the content of the config file, ignore lines starting with #, rest load as variables
 Get-Content $config_fullpath | Foreach-Object{
-    if (-NOT $_.StartsWith("#")){
+    if (-NOT $_.StartsWith('#')){
         $var = $_.Split('=')
         # load preset variables as booleans
         $bool_vars = @('delete_old_backups','keep_monthly','keep_weekly', 'backup_wim_file_before_adding_new_image', 'send_email')
         if ($bool_vars -contains $var[0]) {
             New-Variable -Name $var[0] -Value ($var[1] -eq $true)
         # load what looks like numbers as integers
-        } ElseIf ($var[1] -match "^\d+$") {
+        } ElseIf ($var[1] -match '^\d+$') {
             $integer_version = [convert]::ToInt32($var[1], 10)
             New-Variable -Name $var[0] -Value $integer_version
         # rest as string
@@ -78,25 +82,25 @@ Get-Content $config_fullpath | Foreach-Object{
 
 # some variables used through out the script
 $script_start_date = Get-Date
-$date = Get-Date -format "yyyy-MM-dd"
+$date = Get-Date -format 'yyyy-MM-dd'
 $unix_time = Get-Date -Date (Get-Date).ToUniversalTime() -uformat %s -Millisecond 0
-$wim_image_name = $pure_config_name + "_" + $date + "_" + $unix_time
+$wim_image_name = ('{0}_{1}_{2}' -f $pure_config_name, $date, $unix_time)
 
-$t = Get-Date -format "yyyy-MM-dd || HH:mm:ss"
-Write-Verbose " "
-Write-Verbose "################################################################################"
+$t = Get-Date -format 'yyyy-MM-dd || HH:mm:ss'
+Write-Verbose ' '
+Write-Verbose '################################################################################'
 Write-Verbose "#######                      $t                      #######"
-Write-Verbose " "
-Write-Verbose "-------------------------------------------------------------------------------"
+Write-Verbose ' '
+Write-Verbose '-------------------------------------------------------------------------------'
 Write-Verbose "- configuration file: $config_fullpath"
 Write-Verbose "- log file: $log_file_full_path"
-Write-Verbose " "
+Write-Verbose ' '
 Write-Verbose "- user: $(whoami)"
 Write-Verbose "- target: $target"
 Write-Verbose "- backup to destination: $backup_path"
 Write-Verbose "- compression_level: $compression_level"
 Write-Verbose "- backup wim file before adding new image: $backup_wim_file_before_adding_new_image"
-Write-Verbose " "
+Write-Verbose ' '
 Write-Verbose "- delete_old_backups: $delete_old_backups"
 Write-Verbose "- keep_last_n: $keep_last_n"
 Write-Verbose "- keep_monthly: $keep_monthly"
@@ -107,25 +111,25 @@ Write-Verbose "- keep_n_weekly: $keep_n_weekly"
 # running with admin privilages check
 $running_as_admin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
 if (-NOT $running_as_admin){
-    throw "NOT RUNNING AS ADMIN, THE END"
+    throw 'NOT RUNNING AS ADMIN, THE END'
 }
 # check if $target path exists on the system
 if (-NOT (Test-Path $target)) {
-    throw "NOT A VALID TARGET PATH: " + $target
+    throw "NOT A VALID TARGET PATH: $target"
 }
 # check if $backup_path path exists on the system
 if (-NOT (Test-Path $backup_path)) {
-    throw "NOT A VALID BACKUP PATH: " + $backup_path
+    throw "NOT A VALID BACKUP PATH: $backup_path"
 }
 
 # wim archive will be created/searched for on this path
-$wim_file_full_path = Join-Path -Path $backup_path -ChildPath $($pure_config_name + ".wim")
+$wim_file_full_path = Join-Path -Path $backup_path -ChildPath "$pure_config_name.wim"
 
 #=================================================================
 function verify_wim_image() {
     Param( [string]$path_to_wim_file, [string]$wimlib_exe)
-    Write-Verbose "-------------------------------------------------------------------------------"
-    Write-Verbose "WIM FILE INTEGRITY VERIFICATION"
+    Write-Verbose '-------------------------------------------------------------------------------'
+    Write-Verbose 'WIM FILE INTEGRITY VERIFICATION'
 
     if (Test-Path $path_to_wim_file){
         Write-Verbose "- verification of: $path_to_wim_file"
@@ -133,8 +137,8 @@ function verify_wim_image() {
             & $wimlib_exe verify $path_to_wim_file
         } Catch {
             $old_name = (Get-Item $path_to_wim_file).Name
-            $new_name = "corrupted_" + $old_name
-            Write-Verbose "- verification failed"
+            $new_name = "corrupted_$old_name"
+            Write-Verbose '- verification failed'
             Write-Verbose "- renaming $old_name to $new_name"
             Rename-Item $path_to_wim_file $new_name
             #Remove-Item $path_to_wim_file -Force
@@ -149,18 +153,18 @@ function verify_wim_image() {
 
 
 if (($backup_wim_file_before_adding_new_image -eq $True) -AND (Test-Path $wim_file_full_path)) {
-    Write-Verbose "-------------------------------------------------------------------------------"
-    Write-Verbose "COPY THE WIM FILE BEFORE ADDING NEW IMAGE"
+    Write-Verbose '-------------------------------------------------------------------------------'
+    Write-Verbose 'COPY THE WIM FILE BEFORE ADDING NEW IMAGE'
 
     # backup the wim file before adding new image to guard for possible coccuption during adding of image
-    $wim_file_backup_name = Join-Path -Path $backup_path -ChildPath $($pure_config_name + "_backup.wim")
+    $wim_file_backup_name = Join-Path -Path $backup_path -ChildPath ('{0}_backup.wim' -f $pure_config_name)
     copy-item $wim_file_full_path $wim_file_backup_name -force
     Write-Verbose "- wim file copied: $wim_file_backup_name"
 }
 
 
-Write-Verbose "-------------------------------------------------------------------------------"
-Write-Verbose "BACKUP OF TARGET IN TO WIM ARCHIVE USING WIMLIB"
+Write-Verbose '-------------------------------------------------------------------------------'
+Write-Verbose 'BACKUP OF TARGET IN TO WIM ARCHIVE USING WIMLIB'
 
 if (Test-Path $wim_file_full_path) {
     Write-Verbose "- will be adding new image in to the archive $wim_file_full_path"
@@ -173,43 +177,32 @@ if (Test-Path $wim_file_full_path) {
 # test if what we back up is on a network or a local drive, dont use VSS snapshot if its on network
 $temp_target = Get-Item $target
 if ($temp_target.PSPath.Contains('\\')) {
-    $snapshot = ""
-    Write-Verbose "- the backup target seems to be on a network, not using VSS snapshot"
+    $snapshot = ''
+    Write-Verbose '- the backup target seems to be on a network, not using VSS snapshot'
 } else {
-    $snapshot = "--snapshot"
+    $snapshot = '--snapshot'
 }
 
-[Collections.ArrayList]$wimlib_arguments = $command, $target, $wim_file_full_path, $wim_image_name, "--compress=$compression_level", "--check", $snapshot
+[Collections.ArrayList]$wimlib_arguments = $command, $target, $wim_file_full_path, $wim_image_name, "--compress=$compression_level", '--check', $snapshot
 
-Write-Verbose "- this command will now be executed:"
+Write-Verbose '- this command will now be executed:'
 Write-Verbose "$wimlib_exe_full_path $wimlib_arguments"
 
 &$wimlib_exe_full_path $wimlib_arguments
 
+$run_time = (Get-Date) - $script_start_date
+$readable_run_time = ('{0:dd} days {0:hh} hours {0:mm} minutes {0:ss} seconds' -f $run_time)
+Write-Verbose "execution time so far: $readable_run_time"
 
-Write-Verbose "-------------------------------------------------------------------------------"
-Write-Verbose "DELETING OLD BACKUPS"
+Write-Verbose '-------------------------------------------------------------------------------'
+Write-Verbose 'DELETING OLD BACKUPS'
 
 #=================================================================
 # function to get date object from unix time
 function Convert-UnixTime {
-    Param( [Parameter(Mandatory=$true)][int32]$udate)
-
-    $Timezone = (Get-TimeZone)
-    if ($Timezone.SupportsDaylightSavingTime -eq $True){
-        $TimeAdjust =  ($Timezone.BaseUtcOffset.TotalSeconds + 3600)
-    } else {
-        $TimeAdjust = ($Timezone.BaseUtcOffset.TotalSeconds)
-    }
-
-    # Adjust time from UTC to local based on offset that was determined before.
-    $udate = ($udate + $TimeAdjust)
-
-    # Retrieve start of UNIX Format
-    $orig = (Get-Date -Year 1970 -Month 1 -Day 1 -hour 0 -Minute 0 -Second 0 -Millisecond 0)
-
-    # Return final time
-    return $orig.AddSeconds($udate)
+    Param( [Parameter(Mandatory=$true)][int32]$epoch_time_utc)
+    $d = (Get-Date '1/1/1970').AddSeconds($epoch_time_utc)
+    return [TimeZone]::CurrentTimeZone.ToLocalTime($d)
 }
 #=================================================================
 
@@ -226,39 +219,39 @@ function Get-FriendlySize {
 #=================================================================
 
 # always at least 1 backup
-if ($keep_last_n -lt 1) {Set-Variable -Name "keep_last_n" -Value 1}
+if ($keep_last_n -lt 1) {Set-Variable -Name 'keep_last_n' -Value 1}
 
 # get list of all images in the wim archive file
 $all_previous_backups = @()
 
 &$wimlib_exe_full_path info $wim_file_full_path | %{
     # get index of the image
-    if ($_ -match "^Index:") {
+    if ($_ -match '^Index:') {
         $wim_image_object = New-Object System.Object
         $var = $_.Split(':').Trim()
         $index_number = [convert]::ToInt32($var[-1], 10)
-        $wim_image_object | Add-Member -Type NoteProperty -Name "image_index" -Value $index_number
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'image_index' -Value $index_number
     }
 
-    if ($_ -match "^Name:") {
+    if ($_ -match '^Name:') {
         # get unix time from the images name (e.g. mybackup_2017-10-03_1507067975)
         $var = $_.Split('_').Trim()
         $epoch_time = [convert]::ToInt32($var[-1], 10)
-        $wim_image_object | Add-Member -Type NoteProperty -Name "creation_time" -Value $epoch_time
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'creation_time' -Value $epoch_time
 
         # get date object from the unix time
         $date_object = Convert-UnixTime($epoch_time)
-        $wim_image_object | Add-Member -Type NoteProperty -Name "creation_date_obj" -Value $date_object
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'creation_date_obj' -Value $date_object
 
         # get the year of the image
-        $wim_image_object | Add-Member -Type NoteProperty -Name "year" -Value $date_object.Year
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'year' -Value $date_object.Year
 
         # get month of the year
-        $wim_image_object | Add-Member -Type NoteProperty -Name "month" -Value $date_object.Month
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'month' -Value $date_object.Month
 
         # get week of the year
         $week_of_the_year = get-date $date_object -UFormat %V
-        $wim_image_object | Add-Member -Type NoteProperty -Name "week" -Value $week_of_the_year
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'week' -Value $week_of_the_year
 
         $all_previous_backups += $wim_image_object
     }
@@ -278,12 +271,12 @@ Write-Verbose "- keeping monthly backups: $keep_monthly"
 Write-Verbose "- number of monthly backups kept: $keep_n_monthly"
 Write-Verbose "- keeping weekly backups: $keep_weekly"
 Write-Verbose "- number of weekly backups kept: $keep_n_weekly"
-Write-Verbose " "
+Write-Verbose ' '
 Write-Verbose "- wim file location: $wim_file_full_path"
 $wim_file_size = Get-FriendlySize((Get-Item $wim_file_full_path).Length)
 Write-Verbose "- wim file size: $wim_file_size"
 Write-Verbose "- number of backups in the wim archive: $($sorted_by_creation_date.Count)"
-Write-Verbose "- list current backups in the wim archive: "
+Write-Verbose '- list current backups in the wim archive:'
 Write-Output ($sorted_by_creation_date | Format-Table | Out-String)
 
 if ($delete_old_backups -eq $true -AND $all_previous_backups.Count -gt $keep_last_n) {
@@ -352,40 +345,40 @@ if ($delete_old_backups -eq $true -AND $all_previous_backups.Count -gt $keep_las
         $backups_to_keep += month_week_cleanup_per_year $i.Group $keep_weekly $keep_monthly
     }
 
-    Write-Verbose "- keeping these backups:"
+    Write-Verbose '- keeping these backups:'
     Write-Verbose ($backups_to_keep | Format-Table | Out-String)
 
     # actual deletion of unwanted backups
     foreach ($i in $sorted_by_creation_date) {
         if (-NOT ($backups_to_keep.creation_time -contains $i.creation_time)){
             [Collections.ArrayList]$wimlib_arguments = 'delete', $wim_file_full_path, $i.image_index
-            Write-Verbose "- actual deletion of the backusp:"
-            Write-Verbose "- this command will now be executed:"
+            Write-Verbose '- actual deletion of the backusp:'
+            Write-Verbose '- this command will now be executed:'
             Write-Verbose "$wimlib_exe_full_path $wimlib_arguments"
             &$wimlib_exe_full_path $wimlib_arguments
         }
     }
 
 } else {
-    Write-Verbose "- deletion is disabled or fewer backups currently present than keep_last_n"
+    Write-Verbose '- deletion is disabled or fewer backups currently present than keep_last_n'
 }
 
 
-Write-Verbose "-------------------------------------------------------------------------------"
-Write-Verbose "CREATING INFO FILE"
+Write-Verbose '-------------------------------------------------------------------------------'
+Write-Verbose 'CREATING INFO FILE'
 
 # creating nice and readable info file in the logs directory and next to the wim file
 # it contains information about the content of the vim file, lists backups, dates, size, free space
 $logs_directory = (Get-Item $log_file_full_path).Directory
-$info_file_path = Join-Path -path $logs_directory -ChildPath ($pure_config_name + ".txt")
+$info_file_path = Join-Path -path $logs_directory -ChildPath "$pure_config_name.txt"
 
 $wim_file_size = Get-FriendlySize((Get-Item $wim_file_full_path).Length)
 
 $free_space = 0
 $backup_partition = $backup_path.Substring(0,2)
 
-if ($backup_partition -eq "\\") {
-    $free_space = "unknown, network drive"
+if ($backup_partition -eq '\\') {
+    $free_space = 'unknown, network drive'
 } else {
     $drives = Get-WmiObject Win32_LogicalDisk
     foreach ($d in $drives) {
@@ -395,103 +388,109 @@ if ($backup_partition -eq "\\") {
     }
 }
 
-($wim_file_full_path + " - " + $wim_file_size) | Out-File -FilePath $info_file_path -Encoding "UTF8"
-($backup_partition + " partition free space - " + $free_space) | Out-File -Append -FilePath $info_file_path -Encoding "UTF8"
+"$wim_file_full_path - $wim_file_size" | Out-File -FilePath $info_file_path -Encoding 'UTF8'
+"$backup_partition partition free space - $free_space" | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
 
 $current_backups = @()
 &$wimlib_exe_full_path info $wim_file_full_path | %{
     # get index of the image
-    if ($_ -match "^Index:") {
+    if ($_ -match '^Index:') {
         $wim_image_object = New-Object System.Object
         $var = $_.Split(':').Trim()
         $aa = [convert]::ToInt32($var[-1], 10)
-        $wim_image_object | Add-Member -Type NoteProperty -Name "index" -Value $aa
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'index' -Value $aa
     }
 
-    if ($_ -match "^Name:") {
+    if ($_ -match '^Name:') {
         # get unix time from the end of images name (example: mybackup_2017-10-03_1507067975)
         $var = $_.Split('_').Trim()
         $epoch_time = [convert]::ToInt32($var[-1], 10)
         $date_object = Convert-UnixTime($epoch_time)
 
         # spacer, empty column so that the table looks better
-        $wim_image_object | Add-Member -Type NoteProperty -Name " " -Value " "
+        $wim_image_object | Add-Member -Type NoteProperty -Name ' ' -Value ' '
 
         # get day of the week
-        $week_day = Get-Date $date_object -format "dddd"
-        $wim_image_object | Add-Member -Type NoteProperty -Name "weekday" -Value $week_day
+        $week_day = Get-Date $date_object -format 'dddd'
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'weekday' -Value $week_day
 
         # get day, month in full name
-        $day_month = Get-Date $date_object -format "dd  MMMM  yyyy  "
-        $wim_image_object | Add-Member -Type NoteProperty -Name "day - month - year" -Value $day_month
+        $day_month = Get-Date $date_object -format 'dd  MMMM  yyyy  '
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'day - month - year' -Value $day_month
 
         # spacer, empty column so that the table looks better
-        $wim_image_object | Add-Member -Type NoteProperty -Name "  " -Value "  "
+        $wim_image_object | Add-Member -Type NoteProperty -Name '  ' -Value '  '
 
         # get week of the year
         $week_of_the_year = get-date $date_object -UFormat %V
-        $wim_image_object | Add-Member -Type NoteProperty -Name "week" -Value $week_of_the_year
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'week' -Value $week_of_the_year
 
         # spacer, empty column so that the table looks better
-        $wim_image_object | Add-Member -Type NoteProperty -Name "   " -Value "   "
+        $wim_image_object | Add-Member -Type NoteProperty -Name '   ' -Value '   '
 
         # full date
-        $wim_image_object | Add-Member -Type NoteProperty -Name "full date" -Value $date_object
+        $wim_image_object | Add-Member -Type NoteProperty -Name 'full date' -Value $date_object
 
         $current_backups += $wim_image_object
     }
 }
 
 $table_formated_backup = $current_backups | Sort-Object -Descending 'full date' | Format-Table
-$table_formated_backup | Out-File -Append -FilePath $info_file_path -Encoding "UTF8"
-$body_html = "<hr><table><tr><td>$wim_file_full_path - $wim_file_size</td></tr><tr><td><b>$backup_partition</b> partition free space - <b>$free_space</b></td></tr></table><hr>"
+$table_formated_backup | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
+$body_html = "<hr><table><tr><td>$wim_file_full_path - $wim_file_size</td></tr><tr><td>$backup_partition partition free space - <b>$free_space</b></td></tr></table><hr>"
 $html_table = $current_backups | Sort-Object -Descending 'full date' |  ConvertTo-Html -Body $body_html
 
 
 Write-Verbose "- info file created: $info_file_path"
 
 Copy-Item $info_file_path $backup_path
-Write-Verbose "- info file copied next to wim file"
+Write-Verbose '- info file copied next to wim file'
 
 
 if ($send_email -eq $true) {
-    Write-Verbose "-------------------------------------------------------------------------------"
-    Write-Verbose "SENDING EMAIL"
+    Write-Verbose '-------------------------------------------------------------------------------'
+    Write-Verbose 'SENDING EMAIL'
 
     Write-Verbose "- send_email: $send_email"
-    Write-Verbose "- email_recipient: $email_recipient"
+    Write-Verbose "- email_recipients: $email_recipients"
     Write-Verbose "- email_sender_address: $email_sender_address"
     Write-Verbose "- email_sender_password: *********"
     Write-Verbose "- email_sender_smtp_server: $email_sender_smtp_server"
 
-    Write-Verbose "- email will be send after the end of the transcript"
+    Write-Verbose '- email will be send after the end of the transcript'
 }
 
 $runtime = (Get-Date) - $script_start_date
-$readable_runtime = "{0:dd} days {0:hh} hours {0:mm} minutes {0:ss} seconds" -f $runtime
+$readable_runtime = '{0:dd} days {0:hh} hours {0:mm} minutes {0:ss} seconds' -f $runtime
 
-Write-Verbose "-------------------------------------------------------------------------------"
-Write-Verbose " "
+Write-Verbose '-------------------------------------------------------------------------------'
+Write-Verbose ' '
 Write-Verbose "#######              $readable_runtime              #######"
-Write-Verbose "################################################################################"
-Write-Verbose " "
+Write-Verbose '################################################################################'
+Write-Verbose ' '
 
 Stop-Transcript
 $VerbosePreference = $OldVerbosePreference
 
 # sending email after transcript ended to allow sending of the log file
 if ($send_email -eq $true) {
+    $recipients = $email_recipients.Split(',')
+
     $msg = new-object Net.Mail.MailMessage
     $smtp = new-object Net.Mail.SmtpClient($email_sender_smtp_server)
     $att = New-Object Net.Mail.Attachment($log_file_full_path)
     $msg.Attachments.Add($att)
     $smtp.EnableSSL = $true
     $msg.From = $email_sender_address
-    $msg.To.Add($email_recipient)
+
+    foreach ($addr in $recipients) {
+        $msg.To.Add($addr)
+    }
+
     $msg.BodyEncoding = [system.Text.Encoding]::Unicode
     $msg.SubjectEncoding = [system.Text.Encoding]::Unicode
     $msg.IsBodyHTML = $true
-    $msg.Subject = "Wimilib backup, $pure_config_name"
+    $msg.Subject = "wimlib backup, $pure_config_name"
     $msg.Body = $html_table
     $smtp.Credentials = New-Object System.Net.NetworkCredential($email_sender_address, $email_sender_password)
     $smtp.Send($msg)
