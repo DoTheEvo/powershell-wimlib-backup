@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 #    --------------------------   WIMLIB_BACKUP   --------------------------
 # ------------------------------------------------------------------------------
-# - v1.0.0  2017-10-31
+# - v1.0.1  2017-11-06
 
 # - requirements:
 #       WMF 5.0+, Volume Shadow Copy (VSS) service enabled
@@ -110,17 +110,11 @@ Write-Verbose "- keep_n_weekly: $keep_n_weekly"
 
 # running with admin privilages check
 $running_as_admin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
-if (-NOT $running_as_admin){
-    throw 'NOT RUNNING AS ADMIN, THE END'
-}
-# check if $target path exists on the system
-if (-NOT (Test-Path $target)) {
-    throw "NOT A VALID TARGET PATH: $target"
-}
-# check if $backup_path path exists on the system
-if (-NOT (Test-Path $backup_path)) {
-    throw "NOT A VALID BACKUP PATH: $backup_path"
-}
+if (-NOT $running_as_admin){ throw 'NOT RUNNING AS ADMIN, THE END' }
+# $target path exists on the system check
+if (-NOT (Test-Path $target)) { throw "NOT A VALID TARGET PATH: $target" }
+# $backup_path path exists on the system check
+if (-NOT (Test-Path $backup_path)) { throw "NOT A VALID BACKUP PATH: $backup_path" }
 
 # wim archive will be created/searched for on this path
 $wim_file_full_path = Join-Path -Path $backup_path -ChildPath "$pure_config_name.wim"
@@ -174,7 +168,7 @@ if (Test-Path $wim_file_full_path) {
     $command = 'capture'
 }
 
-# test if what we back up is on a network or a local drive, dont use VSS snapshot if its on network
+# check if what we back up is on a network or a local drive, dont use VSS snapshot if its on network
 $temp_target = Get-Item $target
 if ($temp_target.PSPath.Contains('\\')) {
     $snapshot = ''
@@ -196,6 +190,11 @@ Write-Verbose "execution time so far: $readable_run_time"
 
 Write-Verbose '-------------------------------------------------------------------------------'
 Write-Verbose 'DELETING OLD BACKUPS'
+
+# $target path exists on the system check again
+if (-NOT (Test-Path $target)) { throw "NOT A VALID TARGET PATH: $target" }
+# $backup_path path exists on the system check again
+if (-NOT (Test-Path $backup_path)) { throw "NOT A VALID BACKUP PATH: $backup_path" }
 
 #=================================================================
 # function to get date object from unix time
@@ -365,7 +364,7 @@ if ($delete_old_backups -eq $true -AND $all_previous_backups.Count -gt $keep_las
 
 
 Write-Verbose '-------------------------------------------------------------------------------'
-Write-Verbose 'CREATING INFO FILE'
+Write-Verbose 'CREATING INFO FILE AND EMAIL CONTENT'
 
 # creating nice and readable info file in the logs directory and next to the wim file
 # it contains information about the content of the vim file, lists backups, dates, size, free space
@@ -374,22 +373,33 @@ $info_file_path = Join-Path -path $logs_directory -ChildPath "$pure_config_name.
 
 $wim_file_size = Get-FriendlySize((Get-Item $wim_file_full_path).Length)
 
-$free_space = 0
-$backup_partition = $backup_path.Substring(0,2)
+"$wim_file_full_path - $wim_file_size" | Out-File -FilePath $info_file_path -Encoding 'UTF8'
+$body_html = "<span>$wim_file_full_path - $wim_file_size</span><br>"
 
-if ($backup_partition -eq '\\') {
-    $free_space = 'unknown, network drive'
-} else {
+# skip free space info if backups are saved on a network path
+if (-NOT $backup_path.StartsWith('\\')) {
+    $backup_partition = $backup_path.Substring(0,2)
     $drives = Get-WmiObject Win32_LogicalDisk
     foreach ($d in $drives) {
         if ($d.DeviceID -eq $backup_partition) {
             $free_space = Get-FriendlySize($d.FreeSpace)
+            $total_disk_size = Get-FriendlySize($d.Size)
         }
     }
+
+    $disk_space_text = "$free_space free of $total_disk_size on $backup_partition partition"
+
+    $disk_space_text | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
+    $body_html += "<span>$disk_space_text</span><br>"
 }
 
-"$wim_file_full_path - $wim_file_size" | Out-File -FilePath $info_file_path -Encoding 'UTF8'
-"$backup_partition partition free space - $free_space" | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
+
+$runtime = (Get-Date) - $script_start_date
+$readable_runtime = '{0:dd} days {0:hh} hours {0:mm} minutes {0:ss} seconds' -f $runtime
+
+"last backup duration - $readable_runtime" | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
+$body_html += "<span>last backup duration - $readable_runtime</span><br><hr>"
+
 
 $current_backups = @()
 &$wimlib_exe_full_path info $wim_file_full_path | %{
@@ -437,7 +447,6 @@ $current_backups = @()
 
 $table_formated_backup = $current_backups | Sort-Object -Descending 'full date' | Format-Table
 $table_formated_backup | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
-$body_html = "<hr><table><tr><td>$wim_file_full_path - $wim_file_size</td></tr><tr><td>$backup_partition partition free space - <b>$free_space</b></td></tr></table><hr>"
 $html_table = $current_backups | Sort-Object -Descending 'full date' |  ConvertTo-Html -Body $body_html
 
 
