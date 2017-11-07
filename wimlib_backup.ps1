@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 #    --------------------------   WIMLIB_BACKUP   --------------------------
 # ------------------------------------------------------------------------------
-# - v1.0.1  2017-11-06
+# - v1.0.2  2017-11-07
 
 # - requirements:
 #       WMF 5.0+, Volume Shadow Copy (VSS) service enabled
@@ -61,10 +61,12 @@ Start-Transcript -Path $log_file_full_path -Append -Force
 $OldVerbosePreference = $VerbosePreference
 $VerbosePreference = 'Continue'
 
+$variables_from_config = @()
 # read the content of the config file, ignore lines starting with #, rest load as variables
 Get-Content $config_fullpath | Foreach-Object{
     if (-NOT $_.StartsWith('#')){
         $var = $_.Split('=')
+        $variables_from_config += $var[0]
         # load preset variables as booleans
         $bool_vars = @('delete_old_backups','keep_monthly','keep_weekly', 'backup_wim_file_before_adding_new_image', 'send_email')
         if ($bool_vars -contains $var[0]) {
@@ -80,41 +82,30 @@ Get-Content $config_fullpath | Foreach-Object{
     }
 }
 
-# some variables used through out the script
-$script_start_date = Get-Date
-$date = Get-Date -format 'yyyy-MM-dd'
-$unix_time = Get-Date -Date (Get-Date).ToUniversalTime() -uformat %s -Millisecond 0
-$wim_image_name = ('{0}_{1}_{2}' -f $pure_config_name, $date, $unix_time)
-
-$t = Get-Date -format 'yyyy-MM-dd || HH:mm:ss'
-Write-Verbose ' '
-Write-Verbose '################################################################################'
-Write-Verbose "#######                      $t                      #######"
-Write-Verbose ' '
-Write-Verbose '-------------------------------------------------------------------------------'
-Write-Verbose "- configuration file: $config_fullpath"
-Write-Verbose "- log file: $log_file_full_path"
-Write-Verbose ' '
-Write-Verbose "- user: $(whoami)"
-Write-Verbose "- target: $target"
-Write-Verbose "- backup to destination: $backup_path"
-Write-Verbose "- compression_level: $compression_level"
-Write-Verbose "- backup wim file before adding new image: $backup_wim_file_before_adding_new_image"
-Write-Verbose ' '
-Write-Verbose "- delete_old_backups: $delete_old_backups"
-Write-Verbose "- keep_last_n: $keep_last_n"
-Write-Verbose "- keep_monthly: $keep_monthly"
-Write-Verbose "- keep_weekly: $keep_weekly"
-Write-Verbose "- keep_n_monthly: $keep_n_monthly"
-Write-Verbose "- keep_n_weekly: $keep_n_weekly"
-
 # running with admin privilages check
 $running_as_admin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
 if (-NOT $running_as_admin){ throw 'NOT RUNNING AS ADMIN, THE END' }
-# $target path exists on the system check
+# check if paths are accessible
 if (-NOT (Test-Path $target)) { throw "NOT A VALID TARGET PATH: $target" }
-# $backup_path path exists on the system check
 if (-NOT (Test-Path $backup_path)) { throw "NOT A VALID BACKUP PATH: $backup_path" }
+
+# some variables used through out the script
+$script_start_date = Get-Date
+$date = Get-Date -Format 'yyyy-MM-dd'
+$unix_time = Get-Date -Date (Get-Date).ToUniversalTime() -uformat %s -Millisecond 0
+$wim_image_name = ('{0}_{1}_{2}' -f $pure_config_name, $date, $unix_time)
+
+$t = Get-Date -Format 'yyyy-MM-dd || HH:mm:ss'
+Write-Verbose '################################################################################'
+Write-Verbose "#######                      $t                      #######"
+Write-Verbose ' '
+Write-Verbose '---  SETTINGS OVERVIEW  --------------------------------------------------------'
+Write-Verbose ' '
+
+# write out all the variables and their values from the config file
+foreach ($i in $variables_from_config) {
+    Write-Verbose ('- {0}: {1}' -f $i, (Get-Variable -Name $i -ValueOnly))
+}
 
 # wim archive will be created/searched for on this path
 $wim_file_full_path = Join-Path -Path $backup_path -ChildPath "$pure_config_name.wim"
@@ -122,8 +113,9 @@ $wim_file_full_path = Join-Path -Path $backup_path -ChildPath "$pure_config_name
 #=================================================================
 function verify_wim_image() {
     Param( [string]$path_to_wim_file, [string]$wimlib_exe)
-    Write-Verbose '-------------------------------------------------------------------------------'
-    Write-Verbose 'WIM FILE INTEGRITY VERIFICATION'
+    Write-Verbose ' '
+    Write-Verbose '---  WIM FILE INTEGRITY VERIFICATION  ------------------------------------------'
+    Write-Verbose ' '
 
     if (Test-Path $path_to_wim_file){
         Write-Verbose "- verification of: $path_to_wim_file"
@@ -145,10 +137,10 @@ function verify_wim_image() {
 
 # verify_wim_image $wim_file_full_path $wimlib_exe_full_path
 
-
 if (($backup_wim_file_before_adding_new_image -eq $True) -AND (Test-Path $wim_file_full_path)) {
-    Write-Verbose '-------------------------------------------------------------------------------'
-    Write-Verbose 'COPY THE WIM FILE BEFORE ADDING NEW IMAGE'
+    Write-Verbose ' '
+    Write-Verbose '---  COPY THE WIM FILE BEFORE ADDING NEW IMAGE  --------------------------------'
+    Write-Verbose ' '
 
     # backup the wim file before adding new image to guard for possible coccuption during adding of image
     $wim_file_backup_name = Join-Path -Path $backup_path -ChildPath ('{0}_backup.wim' -f $pure_config_name)
@@ -156,9 +148,13 @@ if (($backup_wim_file_before_adding_new_image -eq $True) -AND (Test-Path $wim_fi
     Write-Verbose "- wim file copied: $wim_file_backup_name"
 }
 
+Write-Verbose ' '
+Write-Verbose '---  BACKUP PROCESS  -----------------------------------------------------------'
+Write-Verbose ' '
 
-Write-Verbose '-------------------------------------------------------------------------------'
-Write-Verbose 'BACKUP OF TARGET IN TO WIM ARCHIVE USING WIMLIB'
+# check if paths are accessible
+if (-NOT (Test-Path $target)) { throw "NOT A VALID TARGET PATH: $target" }
+if (-NOT (Test-Path $backup_path)) { throw "NOT A VALID BACKUP PATH: $backup_path" }
 
 if (Test-Path $wim_file_full_path) {
     Write-Verbose "- will be adding new image in to the archive $wim_file_full_path"
@@ -177,7 +173,7 @@ if ($temp_target.PSPath.Contains('\\')) {
     $snapshot = '--snapshot'
 }
 
-[Collections.ArrayList]$wimlib_arguments = $command, $target, $wim_file_full_path, $wim_image_name, "--compress=$compression_level", '--check', $snapshot
+$wimlib_arguments = @($command, $target, $wim_file_full_path, $wim_image_name, "--compress=$compression_level", '--check', $snapshot)
 
 Write-Verbose '- this command will now be executed:'
 Write-Verbose "$wimlib_exe_full_path $wimlib_arguments"
@@ -186,14 +182,15 @@ Write-Verbose "$wimlib_exe_full_path $wimlib_arguments"
 
 $run_time = (Get-Date) - $script_start_date
 $readable_run_time = ('{0:dd} days {0:hh} hours {0:mm} minutes {0:ss} seconds' -f $run_time)
-Write-Verbose "execution time so far: $readable_run_time"
+Write-Verbose ' '
+Write-Verbose "- backup duration at this point: $readable_run_time"
 
-Write-Verbose '-------------------------------------------------------------------------------'
-Write-Verbose 'DELETING OLD BACKUPS'
+Write-Verbose ' '
+Write-Verbose '---  DELETING OLD BACKUPS  -----------------------------------------------------'
+Write-Verbose ' '
 
-# $target path exists on the system check again
+# check if paths are accessible
 if (-NOT (Test-Path $target)) { throw "NOT A VALID TARGET PATH: $target" }
-# $backup_path path exists on the system check again
 if (-NOT (Test-Path $backup_path)) { throw "NOT A VALID BACKUP PATH: $backup_path" }
 
 #=================================================================
@@ -277,6 +274,7 @@ Write-Verbose "- wim file size: $wim_file_size"
 Write-Verbose "- number of backups in the wim archive: $($sorted_by_creation_date.Count)"
 Write-Verbose '- list current backups in the wim archive:'
 Write-Output ($sorted_by_creation_date | Format-Table | Out-String)
+Write-Verbose ' '
 
 if ($delete_old_backups -eq $true -AND $all_previous_backups.Count -gt $keep_last_n) {
 
@@ -350,7 +348,7 @@ if ($delete_old_backups -eq $true -AND $all_previous_backups.Count -gt $keep_las
     # actual deletion of unwanted backups
     foreach ($i in $sorted_by_creation_date) {
         if (-NOT ($backups_to_keep.creation_time -contains $i.creation_time)){
-            [Collections.ArrayList]$wimlib_arguments = 'delete', $wim_file_full_path, $i.image_index
+            $wimlib_arguments = @('delete', $wim_file_full_path, $i.image_index)
             Write-Verbose '- actual deletion of the backusp:'
             Write-Verbose '- this command will now be executed:'
             Write-Verbose "$wimlib_exe_full_path $wimlib_arguments"
@@ -362,9 +360,9 @@ if ($delete_old_backups -eq $true -AND $all_previous_backups.Count -gt $keep_las
     Write-Verbose '- deletion is disabled or fewer backups currently present than keep_last_n'
 }
 
-
-Write-Verbose '-------------------------------------------------------------------------------'
-Write-Verbose 'CREATING INFO FILE AND EMAIL CONTENT'
+Write-Verbose ' '
+Write-Verbose '---  CREATING INFO FILE AND EMAIL CONTENT  -------------------------------------'
+Write-Verbose ' '
 
 # creating nice and readable info file in the logs directory and next to the wim file
 # it contains information about the content of the vim file, lists backups, dates, size, free space
@@ -457,13 +455,13 @@ Write-Verbose '- info file copied next to wim file'
 
 
 if ($send_email -eq $true) {
-    Write-Verbose '-------------------------------------------------------------------------------'
-    Write-Verbose 'SENDING EMAIL'
-
+    Write-Verbose ' '
+    Write-Verbose '---  SENDING EMAIL  ------------------------------------------------------------'
+    Write-Verbose ' '
     Write-Verbose "- send_email: $send_email"
     Write-Verbose "- email_recipients: $email_recipients"
     Write-Verbose "- email_sender_address: $email_sender_address"
-    Write-Verbose "- email_sender_password: *********"
+    Write-Verbose "- email_sender_password: $email_sender_password"
     Write-Verbose "- email_sender_smtp_server: $email_sender_smtp_server"
 
     Write-Verbose '- email will be send after the end of the transcript'
@@ -472,7 +470,6 @@ if ($send_email -eq $true) {
 $runtime = (Get-Date) - $script_start_date
 $readable_runtime = '{0:dd} days {0:hh} hours {0:mm} minutes {0:ss} seconds' -f $runtime
 
-Write-Verbose '-------------------------------------------------------------------------------'
 Write-Verbose ' '
 Write-Verbose "#######              $readable_runtime              #######"
 Write-Verbose '################################################################################'

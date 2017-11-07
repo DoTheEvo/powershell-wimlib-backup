@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # ---------------------   DEPLOY_AND_MAKE_SCHEDULED_TASK   ---------------------
 # ------------------------------------------------------------------------------
-# - v1.0.0  2017-10-31
+# - v1.0.2  2017-11-07
 
 # - this script creates folder C:\ProgramData\wimlib_backup
 # - copies in to it
@@ -54,18 +54,53 @@ $t = Get-Date -format 'yyyy-MM-dd || HH:mm:ss'
 echo ' '
 echo '################################################################################'
 echo "#######                      $t                      #######"
+
+echo ' '
+echo '---  COPYING FILES  ------------------------------------------------------------'
+echo ' '
+
+# copying and extracting files if need be
+if ($PSScriptRoot -eq $deploy_folder) {
+    echo "- running this script from $deploy_folder"
+    echo '- no new files are copied'
+} else {
+    echo "- copying the files in to $deploy_folder"
+    echo '  - wimlib_backup.ps1'
+    echo '  - wimlib_backup_deploy.ps1'
+    echo '  - WIMLIB_BACKUP_DEPLOY.BAT'
+    echo "  - $current_wimlib_version"
+    echo '- will overwrite files at the destination'
+    robocopy $PSScriptRoot $deploy_folder wimlib_backup.ps1 wimlib_backup_deploy.ps1 WIMLIB_BACKUP_DEPLOY.BAT $current_wimlib_version /IS /NFL /NDL /NJS
+
+    # extract wimlib zip and delete the zip file afterwards
+    $zip_wimlib_path = Join-Path -Path $deploy_folder -ChildPath $current_wimlib_version
+    $zip_extract_target = Join-Path -Path $deploy_folder -ChildPath (Get-Item $zip_wimlib_path).BaseName
+    if (Test-Path $zip_extract_target) {
+        echo "- $zip_extract_target already exists, deleting"
+        Remove-Item $zip_extract_target -Force -Recurse
+    }
+    echo "- extracting wimlib program files in to $zip_extract_target"
+    expand-archive -Path $zip_wimlib_path -destinationpath $zip_extract_target -Force
+    echo '- deleting the zip file'
+    Remove-Item -Path $zip_wimlib_path -Force
+}
+
+echo ' '
+echo '---  NEW BACKUP JOB  -----------------------------------------------------------'
 echo ' '
 
 # get a name that will be associated with this backup
-echo 'ENTER THE NAME FOR THIS BACKUP'
-echo '- config file will be named based on it'
-echo '- wim archive will be named after it'
-echo '- shechuled task will have it in the name'
+echo '- ENTER THE NAME FOR THIS BACKUP'
+echo '  - config file will be named based on it'
+echo '  - wim archive will be named after it'
+echo '  - shechuled task will have it in the name'
 $backup_name = Read-Host '- no spaces, no diacritic, no special characters'
 while (!$backup_name) {
     $backup_name = Read-Host '- no spaces, no diacritic, no special characters'
 }
+
 echo "- backup name entered: $backup_name"
+echo "- deploy path: $deploy_folder"
 
 # some paths that will be used
 $config_file_name = ('{0}_config.ini' -f $backup_name)
@@ -75,12 +110,10 @@ $config_file_path = Join-Path -Path $configs_folder -ChildPath $config_file_name
 # check if config with the same name exists
 if (Test-Path $config_file_path) {
     echo "THE NAME: $backup_name IS ALREADY IN USE!"
+    echo 'EXITING...'
     cmd /c pause
     exit
 }
-
-echo ' '
-echo "- deploy path: $deploy_folder"
 
 # create the deploy and config folder if needed
 if (Test-Path $deploy_folder) {
@@ -129,35 +162,14 @@ $Ar = New-Object  system.security.accesscontrol.filesystemaccessrule('USERS','Mo
 $Acl.SetAccessRule($Ar)
 Set-Acl -Path $config_file_path -AclObject $Acl
 echo '- changing config files permissions to allow easy editing'
-echo ' '
 
-# copying and extracting files if need be
-if ($PSScriptRoot -eq $deploy_folder) {
-    echo "- running this script from $deploy_folder"
-    echo '- nothing will be copied'
-    echo '- only a new config file is created and a new scheduled task is added'
-} else {
-    echo "- copying the files in to $deploy_folder"
-    echo '- will overwrite script files if they already exist'
-    robocopy $PSScriptRoot $deploy_folder wimlib_backup.ps1 wimlib_backup_deploy.ps1 WIMLIB_BACKUP_DEPLOY.BAT $current_wimlib_version /NFL /NDL /NJS /IS
-
-    # extract wimlib zip and delete the zip file afterwards
-    $zip_wimlib_path = Join-Path -Path $deploy_folder -ChildPath $current_wimlib_version
-    $zip_extract_target = Join-Path -Path $deploy_folder -ChildPath (Get-Item $zip_wimlib_path).BaseName
-    if (Test-Path $zip_extract_target) {
-        echo "- $zip_extract_target already exists, deleting"
-        Remove-Item $zip_extract_target -Force -Recurse
-    }
-    echo "- extracting wimlib program files in to $zip_extract_target"
-    expand-archive -Path $zip_wimlib_path -destinationpath $zip_extract_target -Force
-    echo '- deleting the zip file'
-    Remove-Item -Path $zip_wimlib_path -Force
-}
 
 # creating new user to allow the scheduled task to run without being seen in any way
 # /RU SYSTEM does not work on win10, and 7/8 had less info in logging
 echo ' '
-echo 'CHECKING / CREATING WINDOWS LOCAL USER'
+echo '---  CREATING / CHECKING WINDOWS LOCAL USER  -----------------------------------'
+echo ' '
+
 $local_users = Get-LocalUser
 if (-NOT ($local_users.Name -contains $wimlib_backup_user)) {
     echo "- adding new user: $wimlib_backup_user"
@@ -175,10 +187,11 @@ if (-NOT ($local_users.Name -contains $wimlib_backup_user)) {
     echo "- $wimlib_backup_user already exists, lets hope you remember the password"
 }
 
-# scheduled task should be edited using taskschd.msc, not here
 echo ' '
-echo 'CREATING NEW SCHEDULED TASK'
+echo '---  CREATING NEW SCHEDULED TASK  ----------------------------------------------'
+echo ' '
 
+# scheduled task should be edited using taskschd.msc, not here
 $schedule = 'DAILY' # MINUTE HOURLY DAILY WEEKLY MONTHLY ONCE ONSTART ONLOGON ONIDLE
 $modifier = 1 # 1 - every day, 7 - every 7 days, behaves differently depending on unit in schedule
 $start_time = '20:19'
