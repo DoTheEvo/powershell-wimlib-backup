@@ -28,3 +28,14 @@ Deduplicating, VSS, backup solution, creating wim archive, using wimlib
 - windows user `wimlib_backup_user` is created, it provides some benefits
 - in config file you can set email and receive info after each backup
 - you can set many different backup tasks by re-running `C:\ProgramData\wimlib_backup\WIMLIB_BACKUP_DEPLOY.BAT`
+
+#### files explained
+
+
+| file                                   | description                                                                        |
+|----------------------------------------|------------------------------------------------------------------------------------|
+| `WIMLIB_BACKUP_DEPLOY.BAT`             | a bat file that bypasses script execution policy and runs wimlib_backup_deploy.ps1 |
+| `wimlib_backup_deploy.ps1`             | script that copies files where they belong, creates user, creates schedule tasks   |
+| `wimlib-1.12.0-windows-x86_64-bin.zip` | contains wimlib, gets extracted and placed in appdata                              |
+| `wimlib_backup.ps1`                    | the actual backup script that based on config files runs wimlib                    |
+| `simulate_years_of_backups.ps1`        | test file for simulating years of backups, changes date of the PC                  |
