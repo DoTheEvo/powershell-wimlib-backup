@@ -191,11 +191,28 @@ echo ' '
 echo '---  CREATING NEW SCHEDULED TASK  ----------------------------------------------'
 echo ' '
 
+#=================================================================
+# function to create folder named $taskpath in task scheduler
+# $ErrorActionPreference must be Stop to catch non-terminating exception
+Function New-ScheduledTaskFolder {
+    Param ($taskpath)
+
+    $scheduleObject = New-Object -ComObject schedule.service
+    $scheduleObject.connect()
+    $rootFolder = $scheduleObject.GetFolder("\")
+
+    Try {$null = $scheduleObject.GetFolder($taskpath)}
+    Catch { $null = $rootFolder.CreateFolder($taskpath) }
+}
+#=================================================================
+
+New-ScheduledTaskFolder 'wimlib_backup'
+
 # scheduled task should be edited using taskschd.msc, not here
 $schedule = 'DAILY' # MINUTE HOURLY DAILY WEEKLY MONTHLY ONCE ONSTART ONLOGON ONIDLE
 $modifier = 1 # 1 - every day, 7 - every 7 days, behaves differently depending on unit in schedule
 $start_time = '20:19'
-$title = "wimlib_backup_$backup_name"
+$title = "wimlib_backup\$backup_name"
 $command_in_trigger = "'& C:\ProgramData\wimlib_backup\wimlib_backup.ps1 -config_path $config_file_path'"
 $trigger = "Powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command $command_in_trigger"
 

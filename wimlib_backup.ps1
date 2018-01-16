@@ -183,7 +183,7 @@ Write-Verbose "$wimlib_exe_full_path $wimlib_arguments"
 $run_time = (Get-Date) - $script_start_date
 $readable_run_time = ('{0:dd} days {0:hh} hours {0:mm} minutes {0:ss} seconds' -f $run_time)
 Write-Verbose ' '
-Write-Verbose "- backup duration at this point: $readable_run_time"
+Write-Verbose "- backup runtime at this point: $readable_run_time"
 
 Write-Verbose ' '
 Write-Verbose '---  DELETING OLD BACKUPS  -----------------------------------------------------'
@@ -364,15 +364,20 @@ Write-Verbose ' '
 Write-Verbose '---  CREATING INFO FILE AND EMAIL CONTENT  -------------------------------------'
 Write-Verbose ' '
 
-# creating nice and readable info file in the logs directory and next to the wim file
+# creating nice readable info file in the logs directory and next to the wim file
 # it contains information about the content of the vim file, lists backups, dates, size, free space
 $logs_directory = (Get-Item $log_file_full_path).Directory
-$info_file_path = Join-Path -path $logs_directory -ChildPath "$pure_config_name.txt"
+$info_file_path = Join-Path -Path $logs_directory -ChildPath "$pure_config_name.txt"
 
 $wim_file_size = Get-FriendlySize((Get-Item $wim_file_full_path).Length)
 
-"$wim_file_full_path - $wim_file_size" | Out-File -FilePath $info_file_path -Encoding 'UTF8'
-$body_html = "<span>$wim_file_full_path - $wim_file_size</span><br>"
+# first line
+"Backup of $target" | Out-File -FilePath $info_file_path -Encoding 'UTF8'
+$body_html = "<span>Backup of $target</span><br>"
+
+# second line
+"$wim_file_full_path - $wim_file_size" | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
+$body_html += "<span>$wim_file_full_path - $wim_file_size</span><br>"
 
 # skip free space info if backups are saved on a network path
 if (-NOT $backup_path.StartsWith('\\')) {
@@ -387,6 +392,7 @@ if (-NOT $backup_path.StartsWith('\\')) {
 
     $disk_space_text = "$free_space free of $total_disk_size on $backup_partition partition"
 
+    # third line
     $disk_space_text | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
     $body_html += "<span>$disk_space_text</span><br>"
 }
@@ -395,8 +401,9 @@ if (-NOT $backup_path.StartsWith('\\')) {
 $runtime = (Get-Date) - $script_start_date
 $readable_runtime = '{0:dd} days {0:hh} hours {0:mm} minutes {0:ss} seconds' -f $runtime
 
-"last backup duration - $readable_runtime" | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
-$body_html += "<span>last backup duration - $readable_runtime</span><br><hr>"
+# fourth line
+"last backup runtime - $readable_runtime" | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
+$body_html += "<span>last backup runtime - $readable_runtime</span><br><hr>"
 
 
 $current_backups = @()
@@ -444,6 +451,8 @@ $current_backups = @()
 }
 
 $table_formated_backup = $current_backups | Sort-Object -Descending 'full date' | Format-Table
+
+# the last line - the table of current backup
 $table_formated_backup | Out-File -Append -FilePath $info_file_path -Encoding 'UTF8'
 $html_table = $current_backups | Sort-Object -Descending 'full date' |  ConvertTo-Html -Body $body_html
 

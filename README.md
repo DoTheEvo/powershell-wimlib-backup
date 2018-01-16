@@ -1,7 +1,7 @@
 # powershell-wimlib-backup
 Deduplicating, VSS, backup solution, creating wim archive, using wimlib
 
-* Deduplicating - saves lots of space, cleaner and simpler than incremental
+* Deduplicating - saves lots of space, cleaner than incremental
 * VSS - Volume Shadow Service, opened files wont stop this backup
 
 [wimlib](https://wimlib.net/) -  open source, cross-platform library for creating, extracting, and modifying Windows Imaging (WIM) archives. This powershell script just makes easier to use it.
@@ -10,9 +10,10 @@ Deduplicating, VSS, backup solution, creating wim archive, using wimlib
 
 ## how to install
 
-* download the latest [release](https://github.com/DoTheEvo/powershell-wimlib-backup/releases)
+* have powershell at version 5.1, [offline installer here](https://www.microsoft.com/en-us/download/details.aspx?id=54616)
+* download the latest [powershell-wimlib-backup release](https://github.com/DoTheEvo/powershell-wimlib-backup/releases)
 * extract it
-* run `WIMLIB_BACKUP_DEPLOY.BAT` as administrator
+* run `WIMLIB_BACKUP_DEPLOY.BAT` as an administrator
 * follow the on-screen instructions
 * delete downloaded and extracted files
 
@@ -27,6 +28,7 @@ Deduplicating, VSS, backup solution, creating wim archive, using wimlib
 
 - windows user `wimlib_backup_user` is created, it provides some benefits
 - in config file you can set email and receive info after each backup
+- in config file you can set up automatic deletion of old backups
 - you can set many different backup tasks by re-running `C:\ProgramData\wimlib_backup\WIMLIB_BACKUP_DEPLOY.BAT`
 
 #### files explained
