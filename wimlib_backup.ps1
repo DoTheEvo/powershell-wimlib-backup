@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 #    --------------------------   WIMLIB_BACKUP   --------------------------
 # ------------------------------------------------------------------------------
-# - v1.0.2  2017-11-07
+# - v1.0.2  2018-01-18
 
 # - requirements:
 #       WMF 5.0+, Volume Shadow Copy (VSS) service enabled
@@ -142,7 +142,7 @@ if (($backup_wim_file_before_adding_new_image -eq $True) -AND (Test-Path $wim_fi
     Write-Verbose '---  COPY THE WIM FILE BEFORE ADDING NEW IMAGE  --------------------------------'
     Write-Verbose ' '
 
-    # backup the wim file before adding new image to guard for possible coccuption during adding of image
+    # backup the wim file before adding new image to guard for possible coruption during adding of image
     $wim_file_backup_name = Join-Path -Path $backup_path -ChildPath ('{0}_backup.wim' -f $pure_config_name)
     copy-item $wim_file_full_path $wim_file_backup_name -force
     Write-Verbose "- wim file copied: $wim_file_backup_name"
