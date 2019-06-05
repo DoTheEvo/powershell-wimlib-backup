@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # ---------------------   DEPLOY_AND_MAKE_SCHEDULED_TASK   ---------------------
 # ------------------------------------------------------------------------------
-# - v1.0.2  2017-11-07
+# - v1.0.3  2019-06-06
 
 # - this script creates folder C:\ProgramData\wimlib_backup
 # - copies in to it
@@ -15,7 +15,7 @@
 # - new scheduled backup task is created
 
 # --------------------------------------------------------------------
-$current_wimlib_version = 'wimlib-1.12.0-windows-x86_64-bin.zip'
+$current_wimlib_version = 'wimlib-1.13.1-windows-x86_64-bin.zip'
 $deploy_folder = 'C:\ProgramData\wimlib_backup'
 $wimlib_backup_user = 'wimlib_backup_user'
 # --------------------------------------------------------------------

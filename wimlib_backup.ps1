@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 #    --------------------------   WIMLIB_BACKUP   --------------------------
 # ------------------------------------------------------------------------------
-# - v1.0.2  2018-01-18
+# - v1.0.3  2019-06-06
 
 # - requirements:
 #       WMF 5.0+, Volume Shadow Copy (VSS) service enabled
@@ -37,7 +37,7 @@ Param( [string]$config_path=$(throw 'config file is mandatory, please provide as
 # rest of the paths used through out the script come either from the config file
 # or are relative paths to this scripts location
 # --------------------------------------------------------------------
-$wimlib_exe_full_path = 'C:\ProgramData\wimlib_backup\wimlib-1.12.0-windows-x86_64-bin\wimlib-imagex.exe'
+$wimlib_exe_full_path = 'C:\ProgramData\wimlib_backup\wimlib-1.13.0-windows-x86_64-bin\wimlib-imagex.exe'
 # --------------------------------------------------------------------
 
 Set-StrictMode -Version 2.0
@@ -491,24 +491,33 @@ $VerbosePreference = $OldVerbosePreference
 if ($send_email -eq $true) {
     $recipients = $email_recipients.Split(',')
 
-    $msg = new-object Net.Mail.MailMessage
     $smtp = new-object Net.Mail.SmtpClient($email_sender_smtp_server)
-    $att = New-Object Net.Mail.Attachment($log_file_full_path)
-    $msg.Attachments.Add($att)
+    $smtp.Port = 587
     $smtp.EnableSSL = $true
-    $msg.From = $email_sender_address
-
-    foreach ($addr in $recipients) {
-        $msg.To.Add($addr)
+    # check if using sendgrid email relay
+    if (($email_sender_password.StartsWith('SG.')) -AND ($email_sender_password.length -gt 60)) {
+        $smtp.Credentials = New-Object System.Net.NetworkCredential('apikey', $email_sender_password)
+    } else {
+        $smtp.Credentials = New-Object System.Net.NetworkCredential($email_sender_address, $email_sender_password)
     }
 
+    $msg = new-object Net.Mail.MailMessage
+    $msg.From = $email_sender_address
     $msg.BodyEncoding = [system.Text.Encoding]::Unicode
     $msg.SubjectEncoding = [system.Text.Encoding]::Unicode
     $msg.IsBodyHTML = $true
     $msg.Subject = "wimlib backup, $pure_config_name"
     $msg.Body = $html_table
-    $smtp.Credentials = New-Object System.Net.NetworkCredential($email_sender_address, $email_sender_password)
+
+    foreach ($addr in $recipients) {
+        $msg.To.Add($addr)
+    }
+
+    # attachment disabled for now
+    # $att = New-Object Net.Mail.Attachment($log_file_full_path)
+    # $msg.Attachments.Add($att)
+
     $smtp.Send($msg)
-    $att.Dispose()
+    # $att.Dispose()
     $msg.Dispose()
 }
