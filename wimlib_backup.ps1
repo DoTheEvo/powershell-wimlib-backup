@@ -37,7 +37,7 @@ Param( [string]$config_path=$(throw 'config file is mandatory, please provide as
 # rest of the paths used through out the script come either from the config file
 # or are relative paths to this scripts location
 # --------------------------------------------------------------------
-$wimlib_exe_full_path = 'C:\ProgramData\wimlib_backup\wimlib-1.13.0-windows-x86_64-bin\wimlib-imagex.exe'
+$wimlib_exe_full_path = 'C:\ProgramData\wimlib_backup\wimlib-1.13.1-windows-x86_64-bin\wimlib-imagex.exe'
 # --------------------------------------------------------------------
 
 Set-StrictMode -Version 2.0

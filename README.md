@@ -1,6 +1,6 @@
 # powershell-wimlib-backup
 
-**deduplicating, shadow copy, backup solution using wimlib**
+**deduplicating, shadow copy, backup solution**
 
 based around [wimlib](https://wimlib.net/) - open source, cross-platform library for creating, extracting, and modifying Windows Imaging (WIM) archives.
 
@@ -16,7 +16,7 @@ based around [wimlib](https://wimlib.net/) - open source, cross-platform library
 
 ## how to install
 
-* check that you have powershell at version 5.1 using `$PSVersionTable.PSVersion`  
+* check that you have powershell at version 5.1+ using `$PSVersionTable.PSVersion`  
   if not, [offline installer here](https://www.microsoft.com/en-us/download/details.aspx?id=54616)
 * download the latest [powershell-wimlib-backup release](https://github.com/DoTheEvo/powershell-wimlib-backup/releases)
 * extract it
@@ -43,6 +43,7 @@ based around [wimlib](https://wimlib.net/) - open source, cross-platform library
 - there are detailed logs in `C:\ProgramData\wimlib_backup\logs\`
 - you can set many different backup tasks by re-running `C:\ProgramData\wimlib_backup\WIMLIB_BACKUP_DEPLOY.BAT`
 - you can backup up whole system partition and then recover to that system. Though it's bit tricky. Easiest method is to just do clean installation using the same windows version you have, then delete all the files on the system partition and copy the ones from your backup in their place. This bypasses dealing with boot partition and such...
+- support for sendgrid email relay added
 
 ![email_info](https://i.imgur.com/jAXRgd3.png)
 
