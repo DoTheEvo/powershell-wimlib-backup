@@ -15,7 +15,7 @@
 # - new scheduled backup task is created
 
 # --------------------------------------------------------------------
-$current_wimlib_version = 'wimlib-1.13.1-windows-x86_64-bin.zip'
+$current_wimlib_version = 'wimlib-1.13.6-windows-x86_64-bin.zip'
 $deploy_folder = 'C:\ProgramData\wimlib_backup'
 $wimlib_backup_user = 'wimlib_backup_user'
 # --------------------------------------------------------------------
